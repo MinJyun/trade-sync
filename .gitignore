@@ -1,0 +1,29 @@
+# 憑證與密鑰（絕對不能 commit）
+.env
+certs/
+*.p12
+*.pfx
+*.key
+*.pem
+service_account*.json
+credentials*.json
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+env/
+
+# SDK 自動產生的日誌
+log/
+*.log
+
+# macOS
+.DS_Store
+
+# 測試暫存
+tmp/

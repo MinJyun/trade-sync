@@ -1,0 +1,70 @@
+name: Daily Trade Sync
+
+on:
+  schedule:
+    # 台灣時間 16:05（UTC+8） → UTC 08:05，平日執行
+    - cron: "5 8 * * 1-5"
+  workflow_dispatch:
+    inputs:
+      date:
+        description: "指定日期 YYYY-MM-DD（空白則抓今日）"
+        required: false
+        default: ""
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          # 台新 SDK .whl（需手動上傳到 repo 或用 artifact）
+          # pip install taishin_sdk-*.whl
+          # 玉山 SDK .whl
+          # pip install esun_trade-*.whl
+
+      # 憑證檔案寫成實體檔案
+      # 產生方式：base64 -i cert.p12 | pbcopy → 存入 GitHub Secret
+      - name: Write cert files
+        run: |
+          echo "${{ secrets.FUGLE_CERT_BASE64 }}" | base64 -d > /tmp/fugle_cert.p12
+          echo "${{ secrets.ESUN_CERT_BASE64 }}" | base64 -d > /tmp/esun_cert.p12
+
+      - name: Run sync
+        env:
+          ENABLED_BROKERS: fugle,esun
+          # ── 元富/台新 ──
+          FUGLE_IDENTITY: ${{ secrets.FUGLE_IDENTITY }}
+          FUGLE_PASSWD: ${{ secrets.FUGLE_PASSWD }}
+          FUGLE_CERT_PATH: /tmp/fugle_cert.p12
+          FUGLE_CERT_PASS: ${{ secrets.FUGLE_CERT_PASS }}
+          FUGLE_ACCOUNT_NAME: 元富
+          # ── 玉山 ──
+          ESUN_API_KEY: ${{ secrets.ESUN_API_KEY }}
+          ESUN_API_SECRET: ${{ secrets.ESUN_API_SECRET }}
+          ESUN_ACCOUNT: ${{ secrets.ESUN_ACCOUNT }}
+          ESUN_PASSWD: ${{ secrets.ESUN_PASSWD }}
+          ESUN_CERT_PATH: /tmp/esun_cert.p12
+          ESUN_CERT_PASS: ${{ secrets.ESUN_CERT_PASS }}
+          ESUN_ACCOUNT_NAME: 玉山
+          # ── Google Sheets ──
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+          GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
+          GOOGLE_SHEET_NAME: ${{ secrets.GOOGLE_SHEET_NAME }}
+        run: |
+          if [ -n "${{ github.event.inputs.date }}" ]; then
+            python main.py --date "${{ github.event.inputs.date }}"
+          else
+            python main.py
+          fi
