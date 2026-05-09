@@ -54,6 +54,8 @@ def _detect_daytrades(raw_fills) -> Tuple[set, set]:
     """
     groups = defaultdict(lambda: {"buys": [], "sells": []})
     for fill in raw_fills:
+        if fill.market_type == MarketType.IntradayOdd:
+            continue  # 零股不能當沖，排除在外
         key = (fill.filled_date, str(fill.symbol))
         if fill.buy_sell == BSAction.Buy:
             groups[key]["buys"].append(fill)
