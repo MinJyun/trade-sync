@@ -32,6 +32,12 @@ def _build_client(cfg: SheetsConfig) -> gspread.Client:
     return gspread.authorize(creds)
 
 
+def open_sheet(cfg: SheetsConfig) -> gspread.Worksheet:
+    """建立連線並回傳 Worksheet，供外部共用同一個連線。"""
+    client = _build_client(cfg)
+    return client.open_by_key(cfg.sheet_id).worksheet(cfg.sheet_name)
+
+
 def _parse_date(s: str) -> Optional[date]:
     """解析 YYYY/MM/DD 或 YYYY/M/D 格式（容許月日無補零），失敗回傳 None。"""
     try:
@@ -43,13 +49,11 @@ def _parse_date(s: str) -> Optional[date]:
     return None
 
 
-def get_last_dates(cfg: SheetsConfig) -> Dict[str, Optional[date]]:
+def get_last_dates(sheet: gspread.Worksheet) -> Dict[str, Optional[date]]:
     """
     讀取 sheet，回傳各帳戶最後記錄日期。
     e.g. {"元富": date(2026, 4, 2), "中信": date(2026, 3, 15)}
     """
-    client = _build_client(cfg)
-    sheet = client.open_by_key(cfg.sheet_id).worksheet(cfg.sheet_name)
     all_values = sheet.get_all_values()
 
     last_dates: Dict[str, Optional[date]] = defaultdict(lambda: None)
@@ -68,7 +72,7 @@ def get_last_dates(cfg: SheetsConfig) -> Dict[str, Optional[date]]:
 
 
 def find_sell_rows_to_backfill(
-    cfg: SheetsConfig, target_date: date, account: str
+    sheet: gspread.Worksheet, target_date: date, account: str
 ) -> List[dict]:
     """
     掃描 sheet，找出符合以下條件的列：
@@ -79,8 +83,6 @@ def find_sell_rows_to_backfill(
 
     回傳 [{"row": 1-based行號, "symbol": "6770", "quantity": 1000}, ...]
     """
-    client = _build_client(cfg)
-    sheet = client.open_by_key(cfg.sheet_id).worksheet(cfg.sheet_name)
     all_values = sheet.get_all_values()
 
     SELL_TYPES = {"賣出", "當沖賣出"}
@@ -116,16 +118,13 @@ def find_sell_rows_to_backfill(
     return results
 
 
-def batch_update_pnl(cfg: SheetsConfig, updates: List[dict]) -> None:
+def batch_update_pnl(sheet: gspread.Worksheet, updates: List[dict]) -> None:
     """
     批次更新 D 欄（平均成本）和 J 欄（已實現損益）。
     updates: [{"row": 行號, "avg_cost": float, "pnl": float}, ...]
     """
     if not updates:
         return
-
-    client = _build_client(cfg)
-    sheet = client.open_by_key(cfg.sheet_id).worksheet(cfg.sheet_name)
 
     cell_list = []
     for u in updates:
@@ -138,16 +137,13 @@ def batch_update_pnl(cfg: SheetsConfig, updates: List[dict]) -> None:
     print(f"[sheets] backfill 更新 {len(updates)} 列的平均成本與損益。")
 
 
-def append_rows(cfg: SheetsConfig, rows: List[list]) -> None:
+def append_rows(sheet: gspread.Worksheet, rows: List[list]) -> None:
     """將多列資料寫到 sheet 中最後一筆有日期的列之後。
 
     不使用 gspread.append_rows()，避免 Sheet 中有公式的空列導致插入位置錯誤。
     """
     if not rows:
         return
-
-    client = _build_client(cfg)
-    sheet = client.open_by_key(cfg.sheet_id).worksheet(cfg.sheet_name)
 
     # 掃欄 A，找最後一筆有日期值的列（1-based row number）
     col_a = sheet.col_values(COL_DATE + 1)  # gspread col_values 從 1 開始

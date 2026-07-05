@@ -9,10 +9,11 @@
 
 ```
 trade-sync/
-├── main.py              # 執行入口（--date / --backfill-pnl）
+├── main.py              # 執行入口（--date / --backfill-pnl / --import-statement）
 ├── config.py            # 環境變數、broker factory
 ├── models.py            # Trade dataclass + merge_fills()
 ├── sheets_client.py     # Google Sheets 讀寫（含不覆蓋邏輯、backfill）
+├── statement_ctbc.py    # 中信月對帳單 PDF 解析（無 API，改匯入 PDF）
 ├── stock_names.py       # 股票代號→名稱對照（從 Sheet tab 載入）
 ├── brokers/
 │   ├── base.py          # BrokerClient 抽象介面
@@ -87,6 +88,8 @@ main.py
 | `ESUN_CERT_PATH`              | 憑證路徑，e.g. `./certs/esun.p12`        |
 | `ESUN_CERT_PASS`              | 憑證密碼                                  |
 | `ESUN_ACCOUNT_NAME`           | Sheet 顯示名稱（預設：玉山）              |
+| `CTBC_STATEMENT_PASSWORD`     | 中信對帳單 PDF 密碼（身分證字號）         |
+| `CTBC_ACCOUNT_NAME`           | Sheet 顯示名稱（預設：中信）              |
 | `GOOGLE_SERVICE_ACCOUNT_JSON` | Service Account JSON 字串                |
 | `GOOGLE_SHEET_ID`             | 試算表 ID                                 |
 | `GOOGLE_SHEET_NAME`           | 工作表名稱（預設：對帳單）                |
@@ -105,7 +108,22 @@ pip install -r requirements.txt
 python main.py                             # 今日
 python main.py --date 2026-03-15           # 指定日期
 python main.py --backfill-pnl 2026-04-17  # 補填指定日期的損益與平均成本
+python main.py --import-statement 對帳單.pdf  # 匯入中信月對帳單 PDF
 ```
+
+### --import-statement 說明（中信）
+
+中信無對外 API（下單/查詢需其 Windows 專用程式），改用每月寄送的
+「綜合月對帳單」PDF 匯入。`statement_ctbc.py` 解析「國內有價證券交易明細」
+表格，每筆成交轉成一列 append 到 Sheet。
+
+- PDF 為加密檔，密碼為身分證字號，取自 `CTBC_STATEMENT_PASSWORD` 或 `--password`
+- 金額/手續費/交易稅**直接採用對帳單數字**（結算後最終值，最準確）
+- 表格買進列無「交易稅」欄、賣出列才有，依交易別的「買/賣」判斷欄位數
+- 沿用不覆蓋邏輯：跳過中信帳戶 `last_date`(含)以前的交易，只 append 新交易
+- **不做 merge**：對帳單本身已是結算明細，1 列對 1 筆，保留原始成交價
+- **限制**：對帳單無成本基礎，故賣出的 D（平均成本）留空、J（已實現損益）留空，
+  需手動或 Sheet 公式補；當沖無法從對帳單辨識，一律標「買進/賣出」（稅額仍正確）
 
 ### --backfill-pnl 說明
 
