@@ -83,8 +83,10 @@ main.py
 | `FUGLE_CERT_PATH`             | 憑證路徑，e.g. `./certs/fugle.pfx`       |
 | `FUGLE_CERT_PASS`             | 憑證密碼                                  |
 | `FUGLE_ACCOUNT_NAME`          | Sheet 顯示名稱（預設：元富）              |
+| `ESUN_API_KEY`                | 玉山 API key                              |
+| `ESUN_API_SECRET`             | 玉山 API secret                           |
 | `ESUN_ACCOUNT`                | 玉山帳號                                  |
-| `ESUN_PASSWORD`               | 玉山密碼                                  |
+| `ESUN_PASSWD`                 | 玉山密碼                                  |
 | `ESUN_CERT_PATH`              | 憑證路徑，e.g. `./certs/esun.p12`        |
 | `ESUN_CERT_PASS`              | 憑證密碼                                  |
 | `ESUN_ACCOUNT_NAME`           | Sheet 顯示名稱（預設：玉山）              |
@@ -93,12 +95,19 @@ main.py
 | `GOOGLE_SERVICE_ACCOUNT_JSON` | Service Account JSON 字串                |
 | `GOOGLE_SHEET_ID`             | 試算表 ID                                 |
 | `GOOGLE_SHEET_NAME`           | 工作表名稱（預設：對帳單）                |
-| `STOCK_INFO_TAB`              | 股票代號 tab 名稱（預設：股票代號）       |
+| `GOOGLE_STOCK_INFO_TAB`       | 股票代號 tab 名稱（預設：股票代號）       |
 
-GitHub Actions 以 Secrets 注入。憑證需 base64 編碼後存為 `FUGLE_CERT_BASE64` / `ESUN_CERT_BASE64`：
-```bash
-base64 -i certs/fugle.pfx | pbcopy
-```
+## 部署（本機 launchd 排程）
+
+元富/玉山 SDK 為 macOS-only wheel（`macosx_arm64`），無法在 Linux CI 執行，
+故改用 macOS **launchd** 在本機排程，平日 16:05 台灣時間執行 `main.py`。
+
+- LaunchAgent：`~/Library/LaunchAgents/com.minjyun.trade-sync.plist`
+- 執行 log：`log/cron-sync.log`
+- 手動觸發測試：`launchctl kickstart -k gui/$(id -u)/com.minjyun.trade-sync`
+- 中信對帳單為每月手動 `--import-statement`（PDF 由 email 寄送，無法排程）
+
+`.github/workflows/sync.yml` 已停用（需 macOS runner 才能跑，保留供參考）。
 
 ## 執行
 

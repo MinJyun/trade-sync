@@ -10,6 +10,7 @@
 - 識別當沖交易（先賣後買、先買後賣）
 - 不覆蓋已寫入的資料（依帳戶最後記錄日期判斷）
 - 隔日補填損益與平均成本（`--backfill-pnl`）
+- 匯入中信月對帳單 PDF（`--import-statement`，中信無 API）
 
 ## 安裝
 
@@ -38,14 +39,18 @@ cp .env.example .env
 | `FUGLE_PASSWD` | 元富登入密碼 |
 | `FUGLE_CERT_PATH` | 元富憑證路徑，e.g. `./certs/fugle.pfx` |
 | `FUGLE_CERT_PASS` | 元富憑證密碼 |
+| `ESUN_API_KEY` | 玉山 API key |
+| `ESUN_API_SECRET` | 玉山 API secret |
 | `ESUN_ACCOUNT` | 玉山帳號 |
-| `ESUN_PASSWORD` | 玉山密碼 |
+| `ESUN_PASSWD` | 玉山密碼 |
 | `ESUN_CERT_PATH` | 玉山憑證路徑，e.g. `./certs/esun.p12` |
 | `ESUN_CERT_PASS` | 玉山憑證密碼 |
+| `CTBC_STATEMENT_PASSWORD` | 中信對帳單 PDF 密碼（身分證字號） |
+| `CTBC_ACCOUNT_NAME` | 中信 Sheet 顯示名稱（預設：中信） |
 | `GOOGLE_SERVICE_ACCOUNT_JSON` | Google Service Account JSON 字串 |
 | `GOOGLE_SHEET_ID` | Google Sheets 試算表 ID |
 | `GOOGLE_SHEET_NAME` | 工作表名稱（預設：對帳單） |
-| `STOCK_INFO_TAB` | 股票代號對照 tab 名稱（預設：股票代號） |
+| `GOOGLE_STOCK_INFO_TAB` | 股票代號對照 tab 名稱（預設：股票代號） |
 
 憑證放在 `certs/` 目錄下（已列入 .gitignore）。
 
@@ -65,6 +70,9 @@ python main.py --date 2026-04-17
 
 # 補填指定日期的損益與平均成本（隔日才能查到結算資料）
 python main.py --backfill-pnl 2026-04-17
+
+# 匯入中信月對帳單 PDF（密碼取 CTBC_STATEMENT_PASSWORD 或 --password）
+python main.py --import-statement ~/Downloads/當月對帳單.pdf
 ```
 
 ### 正常流程
@@ -102,11 +110,14 @@ python main.py --backfill-pnl 2026-04-17
 2. 在 `config.py` 的 `BROKER_REGISTRY` 加入 factory function
 3. 更新 `.env.example`
 
-## GitHub Actions 自動排程
+## 自動排程（本機 launchd）
 
-平日 16:05 台灣時間自動執行。憑證以 base64 存為 Secrets：
+元富/玉山 SDK 為 macOS-only wheel，無法在 Linux CI 執行，故改用 macOS
+launchd 在本機排程，平日 16:05 台灣時間自動執行。
 
-```bash
-base64 -i certs/fugle.pfx | pbcopy  # 複製後貼到 FUGLE_CERT_BASE64
-base64 -i certs/esun.p12 | pbcopy   # 複製後貼到 ESUN_CERT_BASE64
-```
+- LaunchAgent：`~/Library/LaunchAgents/com.minjyun.trade-sync.plist`
+- 執行 log：`log/cron-sync.log`
+- 手動觸發測試：`launchctl kickstart -k gui/$(id -u)/com.minjyun.trade-sync`
+
+> `.github/workflows/sync.yml` 已停用（需 macOS runner 才能跑，保留供參考）。
+> 中信對帳單為每月手動 `--import-statement`（PDF 由 email 寄送，無法排程）。
