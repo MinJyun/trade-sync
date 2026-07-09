@@ -113,11 +113,16 @@ python main.py --import-statement ~/Downloads/當月對帳單.pdf
 ## 自動排程（本機 launchd）
 
 元富/玉山 SDK 為 macOS-only wheel，無法在 Linux CI 執行，故改用 macOS
-launchd 在本機排程，平日 16:05 台灣時間自動執行。
+launchd 在本機排程。共兩個 LaunchAgent：
 
-- LaunchAgent：`~/Library/LaunchAgents/com.minjyun.trade-sync.plist`
-- 執行 log：`log/cron-sync.log`
-- 手動觸發測試：`launchctl kickstart -k gui/$(id -u)/com.minjyun.trade-sync`
+| 用途 | Label | 時間 | log |
+|------|-------|------|-----|
+| 主同步（抓當日成交） | `com.minjyun.trade-sync` | 週一~五 16:05 | `log/cron-sync.log` |
+| 隔日補損益（`run_backfill.sh`） | `com.minjyun.trade-sync-backfill` | 週二~六 00:10 | `log/cron-backfill.log` |
+
+- backfill 排週二~六，補「前一天」（週一~五）的損益/平均成本；券商損益過午夜才結算，故隔天 00:10 才補得到
+- `run_backfill.sh` 以 `date -v-1d` 算前一天，並含 5 分鐘 watchdog（SDK 無 timeout，避免卡死的 job 佔住 launchd）
+- 手動觸發測試：`launchctl kickstart -k gui/$(id -u)/<Label>`
 
 > `.github/workflows/sync.yml` 已停用（需 macOS runner 才能跑，保留供參考）。
 > 中信對帳單為每月手動 `--import-statement`（PDF 由 email 寄送，無法排程）。
