@@ -114,6 +114,14 @@ main.py
 
 `.github/workflows/sync.yml` 已停用（需 macOS runner 才能跑，保留供參考）。
 
+### 已知問題：IPv6 導致 Google 連線卡死
+
+本機對外的 IPv6 路由不通，而 `google-auth` 更新 OAuth token 時未設 timeout，
+Python 會卡死在 IPv6 socket 連線上（症狀：`stock_names.load` / 任何 Sheet 讀寫
+無限等待；curl 因 happy-eyeballs 退回 IPv4 不受影響）。`main.py` 開頭設
+`urllib3.util.connection.HAS_IPV6 = False` 強制走 IPv4 解決。動到 Google 連線
+若又出現無故卡住，先查是不是這條。
+
 ## 執行
 
 ```bash

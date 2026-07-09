@@ -14,6 +14,12 @@ import sys
 from datetime import date, timedelta
 from typing import List
 
+# 強制 IPv4：本機對外的 IPv6 路由不通，而 google-auth 更新 OAuth token 時
+# 未設 timeout，Python 會卡死在 IPv6 socket 連線上（curl 因 happy-eyeballs 不受影響）。
+# 讓 urllib3 只走 IPv4 即可避開此無限等待。
+import urllib3.util.connection
+urllib3.util.connection.HAS_IPV6 = False
+
 from dotenv import load_dotenv
 load_dotenv()
 
