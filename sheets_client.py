@@ -168,3 +168,53 @@ def append_rows(sheet: gspread.Worksheet, rows: List[list]) -> None:
         value_input_option="USER_ENTERED",
     )
     print(f"[sheets] 已寫入 {len(rows)} 列（從第 {next_row} 列開始）")
+
+
+# ── 每日部位快照（「每日持股 YYYY」/「每日總覽 YYYY」，分年度）──────────
+
+HOLDINGS_HEADER = ["日期", "帳戶", "股名", "股數", "平均成本", "市價", "市值",
+                   "未實現損益", "未實現損益率"]
+SUMMARY_HEADER = ["日期", "帳戶", "持股市值", "現金", "未交割淨額", "帳戶總值",
+                  "未實現損益"]
+
+
+def _get_or_create_ws(spreadsheet, title: str, header: List[str]):
+    """回傳 (worksheet, 是否新建)。找不到就建立並寫入表頭。"""
+    try:
+        return spreadsheet.worksheet(title), False
+    except gspread.WorksheetNotFound:
+        ws = spreadsheet.add_worksheet(title=title, rows=2000, cols=len(header))
+        ws.update("A1", [header])
+        print(f"[sheets] 建立新工作表「{title}」")
+        return ws, True
+
+
+def _snapshot_exists(ws, snapshot_date: date, account: str) -> bool:
+    """該工作表是否已有同日期+同帳戶的列。"""
+    for row in ws.get_all_values()[1:]:
+        if (len(row) >= 2 and _parse_date(row[0]) == snapshot_date
+                and row[1].strip() == account):
+            return True
+    return False
+
+
+def append_portfolio(sheet, snap) -> None:
+    """寫入單一帳戶的每日持股明細與每日總覽；同日同帳戶已存在則跳過。"""
+    ss = sheet.spreadsheet
+    year = snap.snapshot_date.year
+    holdings_ws, created = _get_or_create_ws(ss, f"每日持股 {year}", HOLDINGS_HEADER)
+    if created:  # 未實現損益率欄位設為百分比格式
+        holdings_ws.format("I2:I", {"numberFormat": {"type": "PERCENT", "pattern": "0.00%"}})
+    summary_ws, _ = _get_or_create_ws(ss, f"每日總覽 {year}", SUMMARY_HEADER)
+
+    if _snapshot_exists(summary_ws, snap.snapshot_date, snap.broker_account):
+        print(f"[snapshot] {snap.snapshot_date} {snap.broker_account} 已有快照，跳過。")
+        return
+
+    if snap.positions:
+        holdings_ws.append_rows(
+            [p.to_row() for p in snap.positions], value_input_option="USER_ENTERED"
+        )
+    summary_ws.append_rows([snap.to_summary_row()], value_input_option="USER_ENTERED")
+    print(f"[snapshot] {snap.broker_account} 帳戶總值 {round(snap.total_value):,}"
+          f"（持股 {len(snap.positions)} 檔，未實現 {round(snap.unrealized_pnl):,}）")

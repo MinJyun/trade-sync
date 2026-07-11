@@ -28,14 +28,39 @@ RealizedProfitLossSummary 欄位（實測確認）：
 """
 
 from collections import defaultdict
-from datetime import date
+from datetime import date, timedelta
 from typing import Dict, List, Optional, Tuple
 
 from taishin_sdk import BSAction, MarketType, OrderType  # MarketType.IntradayOdd = 零股盤中
 
 from brokers.base import BrokerClient
-from models import Trade
+from models import Trade, Position, PortfolioSnapshot
 import stock_names
+
+
+def _f(x) -> float:
+    """安全轉 float（None/空字串/非數字 -> 0.0）。"""
+    try:
+        return float(x)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _pct(s: str) -> Optional[float]:
+    """'5.86%' -> 0.0586；空字串或無法解析 -> None。"""
+    try:
+        return float(str(s).replace("%", "").strip()) / 100
+    except (ValueError, AttributeError):
+        return None
+
+
+def _ymd(s: str) -> Optional[date]:
+    """'20260713' -> date(2026,7,13)；失敗 -> None。"""
+    try:
+        s = str(s)
+        return date(int(s[:4]), int(s[4:6]), int(s[6:8]))
+    except (ValueError, IndexError):
+        return None
 
 _FEE_RATE = 0.001425
 _FEE_MIN = 20
@@ -192,6 +217,59 @@ class FugleBroker(BrokerClient):
         self._connect()
         date_str = target_date.strftime("%Y%m%d")
         return self._fetch_pnl_lookup(date_str)
+
+    def get_portfolio(self, snapshot_date: date) -> PortfolioSnapshot:
+        """擷取當下庫存、現金、未交割淨額，組成每日部位快照。"""
+        self._connect()
+        inv = self._sdk.accounting.inventories(self._acc)
+
+        positions: List[Position] = []
+        for p in inv.position_summaries:
+            qty = int(p.current_quantity)
+            if qty == 0:
+                continue
+            positions.append(Position(
+                snapshot_date=snapshot_date,
+                broker_account=self._account_name,
+                stock_id=str(p.symbol),
+                stock_name=stock_names.display(str(p.symbol), str(p.symbol_name)),
+                quantity=qty,
+                avg_cost=_f(p.average_price),
+                market_price=_f(p.current_price),
+                market_value=_f(p.market_value),
+                # 逐檔未實現：total_profit 已扣賣出成本，減 realized 得純未實現
+                unrealized_pnl=_f(p.total_profit) - _f(p.realized_profit),
+                unrealized_rate=_pct(p.unrealized_profit_loss_rate),
+            ))
+
+        bal = self._sdk.accounting.bank_balance(self._acc)
+        cash = _f(bal[0].available_balance) if bal else 0.0
+
+        return PortfolioSnapshot(
+            snapshot_date=snapshot_date,
+            broker_account=self._account_name,
+            positions=positions,
+            holdings_value=_f(inv.market_value),
+            cash=cash,
+            net_settlement=self._net_settlement(snapshot_date),
+            unrealized_pnl=_f(inv.unrealized_profit_loss),
+        )
+
+    def _net_settlement(self, snap_date: date) -> float:
+        """加總『交割日 > 快照日』尚未交割的淨額（應收 +、應付 −）。"""
+        frm = (snap_date - timedelta(days=5)).strftime("%Y%m%d")
+        to = snap_date.strftime("%Y%m%d")
+        try:
+            resp = self._sdk.accounting.history_settlement(self._acc, frm, to)
+        except Exception as e:
+            print(f"[{self._account_name}] 交割查詢失敗（{e}），未交割淨額以 0 計。")
+            return 0.0
+        total = 0.0
+        for s in getattr(resp, "settlements", []) or []:
+            d = _ymd(s.s_date)
+            if d and d > snap_date:      # 只算交割日還沒到的
+                total += float(s.net_amount)
+        return total
 
     def get_fills(self, target_date: date) -> List[Trade]:
         self._connect()

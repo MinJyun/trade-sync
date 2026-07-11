@@ -117,3 +117,59 @@ def merge_fills(fills: List[Trade]) -> List[Trade]:
         ))
 
     return result
+
+
+@dataclass
+class Position:
+    """單一持股快照（來自 broker 庫存查詢）→ 「每日持股」一列。"""
+    snapshot_date: date
+    broker_account: str
+    stock_id: str
+    stock_name: str          # "代號 名稱"
+    quantity: int
+    avg_cost: float          # 平均成本
+    market_price: float      # 市價
+    market_value: float      # 市值
+    unrealized_pnl: float    # 未實現損益
+    unrealized_rate: Optional[float] = None   # 小數，0.0586 = 5.86%
+
+    def to_row(self) -> list:
+        return [
+            self.snapshot_date.strftime("%Y/%m/%d"),   # A 日期
+            self.broker_account,                        # B 帳戶
+            self.stock_name,                            # C 股名
+            self.quantity,                              # D 股數
+            round(self.avg_cost, 2),                    # E 平均成本
+            round(self.market_price, 2),                # F 市價
+            round(self.market_value, 0),                # G 市值
+            round(self.unrealized_pnl, 0),              # H 未實現損益
+            round(self.unrealized_rate, 4) if self.unrealized_rate is not None else "",  # I 損益率
+        ]
+
+
+@dataclass
+class PortfolioSnapshot:
+    """單一帳戶每日總覽快照 → 「每日總覽」一列。"""
+    snapshot_date: date
+    broker_account: str
+    positions: List[Position]
+    holdings_value: float     # 持股市值（broker 權威值，非硬算市值−成本）
+    cash: float               # 現金餘額
+    net_settlement: float     # 未交割淨額（應收 +、應付 −）
+    unrealized_pnl: float     # 未實現損益（broker 權威值或加總）
+
+    @property
+    def total_value(self) -> float:
+        """帳戶總值 = 持股市值 + 現金 + 未交割淨額。"""
+        return self.holdings_value + self.cash + self.net_settlement
+
+    def to_summary_row(self) -> list:
+        return [
+            self.snapshot_date.strftime("%Y/%m/%d"),   # A 日期
+            self.broker_account,                        # B 帳戶
+            round(self.holdings_value, 0),              # C 持股市值
+            round(self.cash, 0),                        # D 現金
+            round(self.net_settlement, 0),              # E 未交割淨額
+            round(self.total_value, 0),                 # F 帳戶總值
+            round(self.unrealized_pnl, 0),              # G 未實現損益
+        ]

@@ -25,7 +25,7 @@ load_dotenv()
 
 from config import SheetsConfig, get_enabled_brokers
 from models import SIDE_LABEL, Trade, merge_fills
-from sheets_client import open_sheet, append_rows, get_last_dates, find_sell_rows_to_backfill, batch_update_pnl
+from sheets_client import open_sheet, append_rows, get_last_dates, find_sell_rows_to_backfill, batch_update_pnl, append_portfolio
 from statement_ctbc import parse_statement
 import stock_names
 
@@ -218,12 +218,24 @@ def main():
             print(f"  → {t.stock_name} {t.side} {t.quantity}股 @{t.price}")
             all_rows.append(t.to_row())
 
-    if not all_rows:
-        print("[main] 無新資料需要寫入。")
-        sys.exit(0)
+    if all_rows:
+        print(f"[main] 共 {len(all_rows)} 列，寫入 Google Sheets...")
+        append_rows(sheet, all_rows)
+    else:
+        print("[main] 無新交易資料需寫入。")
 
-    print(f"[main] 共 {len(all_rows)} 列，寫入 Google Sheets...")
-    append_rows(sheet, all_rows)
+    # 每日部位快照：只在 target_date == 今天（庫存 API 只回當下部位），
+    # 沒成交也要記一筆淨值。中信無此 API，用 hasattr 跳過。
+    if target_date == date.today():
+        print("[main] 擷取每日部位快照...")
+        for broker in brokers:
+            if not hasattr(broker, "get_portfolio"):
+                continue
+            try:
+                append_portfolio(sheet, broker.get_portfolio(target_date))
+            except Exception as e:
+                print(f"[{broker.account_name}] 部位快照失敗：{e}")
+
     print("[main] 完成。")
 
 

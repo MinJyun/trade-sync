@@ -11,8 +11,8 @@
 trade-sync/
 ├── main.py              # 執行入口（--date / --backfill-pnl / --import-statement）
 ├── config.py            # 環境變數、broker factory
-├── models.py            # Trade dataclass + merge_fills()
-├── sheets_client.py     # Google Sheets 讀寫（含不覆蓋邏輯、backfill）
+├── models.py            # Trade / Position / PortfolioSnapshot dataclass + merge_fills()
+├── sheets_client.py     # Google Sheets 讀寫（不覆蓋、backfill、每日部位快照）
 ├── statement_ctbc.py    # 中信月對帳單 PDF 解析（無 API，改匯入 PDF）
 ├── stock_names.py       # 股票代號→名稱對照（從 Sheet tab 載入）
 ├── brokers/
@@ -156,6 +156,38 @@ python main.py --import-statement 對帳單.pdf  # 匯入中信月對帳單 PDF
 - 掃 Sheet 找符合：日期 == 指定日期 + 帳戶 == 券商帳戶名稱 + 類型 in {賣出,當沖賣出} + J 欄為空
 - 呼叫 `sdk.accounting.realized_profit_and_loses` 取得損益
 - 按股數比例分配 PnL，`batch_update` 寫回 D 和 J 欄
+
+## 每日部位快照（已實測確認）
+
+主同步（16:05）尾端順跑：對每個支援的 broker 呼叫 `get_portfolio()`，寫入兩個
+**分年度、自動建立**的工作表。中信無此 API，用 `hasattr` 跳過。
+
+- 只在 `target_date == 今天`才快照（庫存 API 只回當下部位），**沒成交也記一筆**
+- 不覆蓋：同日+同帳戶已存在就跳過（掃「每日總覽」的 A/B 欄）
+- 工作表名含年份：`每日持股 YYYY` / `每日總覽 YYYY`，跨年自動開新的
+
+**「每日持股 YYYY」**（逐檔）：日期, 帳戶, 股名, 股數, 平均成本, 市價, 市值, 未實現損益, 未實現損益率
+**「每日總覽 YYYY」**（每帳戶一列）：日期, 帳戶, 持股市值, 現金, 未交割淨額, 帳戶總值, 未實現損益
+
+### 帳戶總值公式（重點：要算 T+2 交割款）
+
+> **帳戶總值 = 持股市值 + 現金 + 未交割淨額**（應收 +、應付 −）
+
+現金是「當下餘額」，尚未扣未交割的買進款，故**必須**加未交割淨額才正確。
+
+### 資料來源（實測欄位）
+
+| | 元富 `taishin` | 玉山 `esun` |
+|---|---|---|
+| 持股 | `accounting.inventories(acc).position_summaries` | `sdk.get_inventories()` |
+| 現金 | `accounting.bank_balance(acc)[0].available_balance` | `sdk.get_balance()["available_balance"]` |
+| 未交割 | `accounting.history_settlement(acc, from, to).settlements[].net_amount`（濾 `s_date > 快照日`） | `sdk.get_settlements()[].price` |
+| 持股市值 | `inventories().market_value`（帳戶層權威值） | Σ`value_mkt` |
+| 未實現(帳戶) | `inventories().unrealized_profit_loss` | Σ`make_a_sum` |
+| 未實現(逐檔) | `total_profit − realized_profit`（**`unrealized_profit` 是 None，勿用**） | `make_a_sum` |
+
+- 數值皆字串需轉型；`_f()` 安全轉 float 防 None。損益率統一存小數（Sheet 以 % 顯示）。
+- 元富 `settlement_net`/`settlement_today` 只看「今日」交割，**不含未來交割日**，故未交割要用 `history_settlement` 撈日期範圍再濾 `s_date > 快照日`。
 
 ## 費用計算邏輯（元富，已實測確認）
 

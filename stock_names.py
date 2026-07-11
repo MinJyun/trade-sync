@@ -66,3 +66,14 @@ def get(stock_id: str, fallback: Optional[Dict[str, str]] = None) -> str:
     """
     source = _cache if _cache is not None else (fallback or {})
     return source.get(stock_id, stock_id)
+
+
+def display(stock_id: str, fallback_name: str = "") -> str:
+    """
+    回傳「代號 名稱」；對照表查無此代號時，改用 API 提供的 fallback_name。
+    e.g. display("2330") -> "2330 台積電"；查無 -> display("9999","某某") -> "9999 某某"
+    """
+    name = get(stock_id)
+    if name != stock_id:
+        return name
+    return f"{stock_id} {fallback_name}".strip() if fallback_name else stock_id

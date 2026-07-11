@@ -37,7 +37,8 @@ from typing import List
 from keyring import set_password
 
 from brokers.base import BrokerClient
-from models import Trade
+from models import Trade, Position, PortfolioSnapshot
+import stock_names
 
 _ACCOUNT_KEY = "esun_trade_sdk:account"
 _CERT_KEY = "esun_trade_sdk:cert"
@@ -101,6 +102,42 @@ class EsunBroker(BrokerClient):
         sdk.login()
         self._sdk = sdk
         return sdk
+
+    def get_portfolio(self, snapshot_date: date) -> PortfolioSnapshot:
+        """擷取當下庫存、現金、未交割淨額，組成每日部位快照。"""
+        sdk = self._connect()
+
+        positions: List[Position] = []
+        for x in sdk.get_inventories():
+            qty = int(x.get("qty_l", 0))
+            if qty == 0:
+                continue
+            stk_no = x.get("stk_no", "")
+            positions.append(Position(
+                snapshot_date=snapshot_date,
+                broker_account=self._account_name,
+                stock_id=stk_no,
+                stock_name=stock_names.display(stk_no, x.get("stk_na", "")),
+                quantity=qty,
+                avg_cost=float(x.get("price_avg", 0)),
+                market_price=float(x.get("price_now", 0)),
+                market_value=float(x.get("value_mkt", 0)),
+                unrealized_pnl=float(x.get("make_a_sum", 0)),
+                unrealized_rate=float(x.get("make_a_per", 0)) / 100,  # '-2.53' -> -0.0253
+            ))
+
+        cash = float(sdk.get_balance().get("available_balance", 0))
+        net_settlement = sum(float(s.get("price", 0)) for s in sdk.get_settlements())
+
+        return PortfolioSnapshot(
+            snapshot_date=snapshot_date,
+            broker_account=self._account_name,
+            positions=positions,
+            holdings_value=sum(p.market_value for p in positions),
+            cash=cash,
+            net_settlement=net_settlement,
+            unrealized_pnl=sum(p.unrealized_pnl for p in positions),
+        )
 
     def get_fills(self, target_date: date) -> List[Trade]:
         sdk = self._connect()
