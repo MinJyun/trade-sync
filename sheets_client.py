@@ -174,8 +174,9 @@ def append_rows(sheet: gspread.Worksheet, rows: List[list]) -> None:
 
 HOLDINGS_HEADER = ["日期", "帳戶", "股名", "股數", "平均成本", "市價", "市值",
                    "未實現損益", "未實現損益率"]
-SUMMARY_HEADER = ["日期", "帳戶", "持股市值", "現金", "未交割淨額", "帳戶總值",
-                  "未實現損益"]
+# 每日總覽每帳戶一張 tab（每日總覽-<帳戶> <年>），故無「帳戶」欄。
+SUMMARY_HEADER = ["日期", "持股市值", "現金", "未交割淨額", "帳戶總值",
+                  "未實現損益", "入金出金"]
 
 
 def _get_or_create_ws(spreadsheet, title: str, header: List[str]):
@@ -189,25 +190,26 @@ def _get_or_create_ws(spreadsheet, title: str, header: List[str]):
         return ws, True
 
 
-def _snapshot_exists(ws, snapshot_date: date, account: str) -> bool:
-    """該工作表是否已有同日期+同帳戶的列。"""
+def _snapshot_exists(ws, snapshot_date: date) -> bool:
+    """該工作表（已是單一帳戶）是否已有同日期的列。"""
     for row in ws.get_all_values()[1:]:
-        if (len(row) >= 2 and _parse_date(row[0]) == snapshot_date
-                and row[1].strip() == account):
+        if row and _parse_date(row[0]) == snapshot_date:
             return True
     return False
 
 
 def append_portfolio(sheet, snap) -> None:
-    """寫入單一帳戶的每日持股明細與每日總覽；同日同帳戶已存在則跳過。"""
+    """寫入單一帳戶的每日持股明細與每日總覽；同日已存在則跳過。"""
     ss = sheet.spreadsheet
     year = snap.snapshot_date.year
     holdings_ws, created = _get_or_create_ws(ss, f"每日持股 {year}", HOLDINGS_HEADER)
     if created:  # 未實現損益率欄位設為百分比格式
         holdings_ws.format("I2:I", {"numberFormat": {"type": "PERCENT", "pattern": "0.00%"}})
-    summary_ws, _ = _get_or_create_ws(ss, f"每日總覽 {year}", SUMMARY_HEADER)
+    # 每帳戶一張總覽 tab
+    summary_ws, _ = _get_or_create_ws(
+        ss, f"每日總覽-{snap.broker_account} {year}", SUMMARY_HEADER)
 
-    if _snapshot_exists(summary_ws, snap.snapshot_date, snap.broker_account):
+    if _snapshot_exists(summary_ws, snap.snapshot_date):
         print(f"[snapshot] {snap.snapshot_date} {snap.broker_account} 已有快照，跳過。")
         return
 

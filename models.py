@@ -164,12 +164,13 @@ class PortfolioSnapshot:
         return self.holdings_value + self.cash + self.net_settlement
 
     def to_summary_row(self) -> list:
+        # 帳戶由 tab 名稱識別（每帳戶一張），故不含帳戶欄。
         return [
-            self.snapshot_date.strftime("%Y/%m/%d"),   # A 日期
-            self.broker_account,                        # B 帳戶
-            round(self.holdings_value, 0),              # C 持股市值
-            round(self.cash, 0),                        # D 現金
-            round(self.net_settlement, 0),              # E 未交割淨額
-            round(self.total_value, 0),                 # F 帳戶總值
-            round(self.unrealized_pnl, 0),              # G 未實現損益
+            self.snapshot_date.strftime("%Y/%m/%d"),   # 日期
+            round(self.holdings_value, 0),              # 持股市值
+            round(self.cash, 0),                        # 現金
+            round(self.net_settlement, 0),              # 未交割淨額
+            round(self.total_value, 0),                 # 帳戶總值
+            round(self.unrealized_pnl, 0),              # 未實現損益
+            "",                                         # 入金出金（手動填，程式留空）
         ]
