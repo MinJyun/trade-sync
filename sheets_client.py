@@ -175,8 +175,9 @@ def append_rows(sheet: gspread.Worksheet, rows: List[list]) -> None:
 HOLDINGS_HEADER = ["日期", "帳戶", "股名", "股數", "平均成本", "市價", "市值",
                    "未實現損益", "未實現損益率"]
 # 每日總覽每帳戶一張 tab（每日總覽-<帳戶> <年>），故無「帳戶」欄。
+# H 累計淨注資、I 真實累計損益為公式欄（append 時逐列寫入）。
 SUMMARY_HEADER = ["日期", "持股市值", "現金", "未交割淨額", "帳戶總值",
-                  "未實現損益", "入金出金"]
+                  "未實現損益", "入金出金", "累計淨注資", "真實累計損益"]
 
 
 def _get_or_create_ws(spreadsheet, title: str, header: List[str]):
@@ -217,6 +218,16 @@ def append_portfolio(sheet, snap) -> None:
         holdings_ws.append_rows(
             [p.to_row() for p in snap.positions], value_input_option="USER_ENTERED"
         )
-    summary_ws.append_rows([snap.to_summary_row()], value_input_option="USER_ENTERED")
+
+    # 總覽：算下一列位置，寫 A–G 值 + H/I 公式。
+    # 不用 append_rows（避免公式欄的空值影響插入位置，同交易 append 的教訓）。
+    # baseline = 該 tab 第一列（$E$2）的帳戶總值；跨年新 tab 自動用該年第一列。
+    r = len(summary_ws.col_values(1)) + 1
+    row = snap.to_summary_row() + [
+        f"=SUM($G$2:G{r})",       # H 累計淨注資（入金出金累計）
+        f"=E{r}-$E$2-H{r}",       # I 真實累計損益 = 帳戶總值 − 起始 − 累計注資
+    ]
+    summary_ws.update(range_name=f"A{r}:I{r}", values=[row],
+                      value_input_option="USER_ENTERED")
     print(f"[snapshot] {snap.broker_account} 帳戶總值 {round(snap.total_value):,}"
           f"（持股 {len(snap.positions)} 檔，未實現 {round(snap.unrealized_pnl):,}）")
